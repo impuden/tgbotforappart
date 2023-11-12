@@ -4,10 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"strings"
 	"tgappart/data"
 	"tgappart/usermap"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
@@ -16,6 +14,7 @@ type ConfirmationRequest struct {
 	Payer   string
 	Payee   string
 	ChatID  int64
+	PayerID int64
 	ReplyTo int
 }
 
@@ -49,13 +48,7 @@ func ShowDebt(db *sql.DB, bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery
 
 }
 
-type Nickel struct {
-	Message tgbotapi.Message
-}
-
-var nickelCh = make(chan Nickel)
-
-func Deldebt(userID int, bot *tgbotapi.BotAPI, updates <-chan tgbotapi.Update, chatID int64, db *sql.DB) {
+func Deldebt(userID int, bot *tgbotapi.BotAPI, updates <-chan tgbotapi.Update, chatID int64) {
 	username, exist := usermap.TelegramID[userID]
 	if !exist {
 		log.Println("user not exist", userID)
@@ -65,89 +58,89 @@ func Deldebt(userID int, bot *tgbotapi.BotAPI, updates <-chan tgbotapi.Update, c
 	msg := tgbotapi.NewMessage(chatID, "С кем ты хочешь расчитаться?")
 	bot.Send(msg)
 
-	var confirmationRequest *ConfirmationRequest
+	for update := range updates {
+		log.Println("Received update")
+		if update.Message.Text == "" {
+			log.Println("Empty message received")
+			continue
+		}
 
-	go func() {
-		for {
-			select {
-			case update := <-updates:
-				log.Println("Received update")
-				if update.Message.Text == "" {
-					log.Println("Empty message received")
-					continue
-				}
+		payee := update.Message.Text
 
-				payee := update.Message.Text
+		var payeeID int64
 
-				var payeeID int64
-
-				for id, name := range usermap.TelegramID {
-					if name == payee {
-						payeeID = int64(id)
-						break
-					}
-				}
-
-				if payeeID == 0 {
-					msg := tgbotapi.NewMessage(chatID, "Нет у нас в квартире таких, повтори ввод.")
-					bot.Send(msg)
-					continue
-				}
-				log.Println("Creating confirmation request")
-				confirmationRequest = &ConfirmationRequest{
-					Payer:   username,
-					Payee:   payee,
-					ChatID:  payeeID,
-					ReplyTo: update.Message.MessageID,
-				}
-				confirmationRequests[payee] = confirmationRequest
-
-				confirmMsg := tgbotapi.NewMessage(payeeID, fmt.Sprintf("Подтверди что %s вернул твои кровные, напиши 'да'", username))
-				bot.Send(confirmMsg)
-				confirmMsg.ReplyToMessageID = update.Message.MessageID
-
-				nickelCh <- Nickel{Message: *update.Message}
+		for id, name := range usermap.TelegramID {
+			if name == payee {
+				payeeID = int64(id)
+				break
 			}
 		}
-	}()
 
-	for {
-		select {
-		case <-time.After(30 * time.Minute):
-			log.Println("30 minutes timeout reached")
-			msg := tgbotapi.NewMessage(confirmationRequest.ChatID, "Время вышло, теперь все по новой")
+		if payeeID == 0 {
+			msg := tgbotapi.NewMessage(chatID, "Нет у нас в квартире таких, повтори ввод.")
 			bot.Send(msg)
-			delete(confirmationRequests, confirmationRequest.Payer)
-			return
-		case nickel := <-nickelCh:
-			log.Println("Received nickel message")
-			text := strings.ToLower(strings.TrimSpace(nickel.Message.Text))
-			if text == "да" {
-				log.Println("have da")
-				if nickel.Message.Chat.ID != confirmationRequest.ChatID {
-					continue
-				}
-
-				err := data.Deletedebt(db, confirmationRequest.Payer, confirmationRequest.Payee)
-				if err != nil {
-					log.Println("fail delete debt", err)
-					msg := tgbotapi.NewMessage(confirmationRequest.ChatID, "Что-то не так при удалении долга, напиши создателю")
-					bot.Send(msg)
-					return
-				}
-
-				msg := tgbotapi.NewMessage(confirmationRequest.ChatID, "Расчитались, молодцы!")
-				msg.ReplyMarkup = MainMenu() // Ваша настраиваемая разметка
-				bot.Send(msg)
-				delete(confirmationRequests, confirmationRequest.Payer)
-				return
-			} else {
-				msg := tgbotapi.NewMessage(confirmationRequest.ChatID, "Расчет не подтвердился, не фортануло..")
-				msg.ReplyMarkup = MainMenu() // Ваша настраиваемая разметка
-				bot.Send(msg)
-				delete(confirmationRequests, confirmationRequest.Payer)
-				return
-			}
+			continue
 		}
+
+		log.Println("Creating confirmation request")
+		confirmationRequest := &ConfirmationRequest{
+			Payer:   username,
+			Payee:   payee,
+			ChatID:  payeeID,
+			PayerID: chatID,
+			ReplyTo: update.Message.MessageID,
+		}
+		confirmationRequests[payee] = confirmationRequest
+
+		log.Printf("Confirmation Request: %+v", confirmationRequest)
+
+		confirmMsg := tgbotapi.NewMessage(payeeID, fmt.Sprintf("Подтверди что %s вернул твои кровные", username))
+		confirmMsg.ReplyMarkup = Accept()
+		bot.Send(confirmMsg)
+		log.Println("conf sent")
+
+		return
 	}
+}
+
+func Confirm(db *sql.DB, bot *tgbotapi.BotAPI, payee string) {
+	confirmationRequest, exists := confirmationRequests[payee]
+	if !exists {
+		log.Println("no confirm request exist for this user")
+		return
+	}
+
+	err := data.Deletedebt(db, confirmationRequest.Payer, confirmationRequest.Payee)
+	if err != nil {
+		log.Println("fail delete debt", err)
+		msg := tgbotapi.NewMessage(confirmationRequest.ChatID, "Что-то не так при удалении долга, напиши создателю")
+		bot.Send(msg)
+		return
+	}
+
+	msg := tgbotapi.NewMessage(confirmationRequest.ChatID, "Расчитались, молодцы!")
+	nsg := tgbotapi.NewMessage(confirmationRequest.PayerID, "Расчитались, молодцы!")
+	msg.ReplyMarkup = MainMenu()
+	nsg.ReplyMarkup = MainMenu()
+	bot.Send(nsg)
+	bot.Send(msg)
+	delete(confirmationRequests, confirmationRequest.Payer)
+
+}
+
+func Decline(bot *tgbotapi.BotAPI, chatID int64, payee string) {
+	confirmationRequest, exists := confirmationRequests[payee]
+	if !exists {
+		log.Println("no confirm request exist for this user, on decline")
+		return
+	}
+
+	msg := tgbotapi.NewMessage(confirmationRequest.ChatID, "Отклонено.")
+	nsg := tgbotapi.NewMessage(confirmationRequest.PayerID, "Отклонено другой стороной.")
+	nsg.ReplyMarkup = MainMenu()
+	msg.ReplyMarkup = MainMenu()
+	bot.Send(msg)
+	bot.Send(nsg)
+	delete(confirmationRequests, confirmationRequest.Payer)
+
 }

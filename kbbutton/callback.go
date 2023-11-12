@@ -3,6 +3,7 @@ package kbbutton
 import (
 	"database/sql"
 	"fmt"
+	"tgappart/usermap"
 
 	"log"
 
@@ -19,7 +20,6 @@ func Callback(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery, db *sql.DB
 
 	switch data {
 	case "zhkh":
-		// Устанавливаем текст сообщения в callback.Data
 		callback.Data = "ЖКХ"
 		HandleZhkhCallback(bot, callback, db)
 	case "common":
@@ -29,7 +29,7 @@ func Callback(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery, db *sql.DB
 		msg.Text = "Потратился? Запиши!\nТыкни 'Добавить'"
 		msg.ReplyMarkup = AddExpensesKeyboard()
 	case "delete":
-		Resetexp(bot, chatID, db, userID, updates)
+		Resetexp(bot, chatID, userID)
 	case "mydlg":
 		msg.ReplyMarkup = DeleteDebtKB()
 		ShowDebt(db, bot, callback, chatID, userID)
@@ -40,12 +40,24 @@ func Callback(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery, db *sql.DB
 	case "addzhkh":
 		Addzhkh(bot, db, chatID, updates, callback)
 	case "delzhkh":
-		Delzhkhbutton(bot, chatID, db, userID, updates)
+		Delzhkhbutton(bot, chatID, db, userID)
 	case "addcommon":
 		AddCommon(db, bot, callback.Message.Chat.ID, updates, callback)
 	case "deldebt":
-		Deldebt(userID, bot, updates, chatID, db)
-		//Confirmation(userID, bot, db)
+		Deldebt(userID, bot, updates, chatID)
+	case "accept":
+		payee := usermap.TelegramID[userID]
+		log.Println("payee", payee)
+		Confirm(db, bot, payee)
+	case "decline":
+		payee := usermap.TelegramID[userID]
+		Decline(bot, chatID, payee)
+	case "accdelexp":
+		DeleteExp(bot, chatID, db, userID)
+	case "decldelexp":
+		DeclineDelExp(bot, chatID)
+	case "accdelzhkh":
+		AccDelZHKH(bot, chatID, db)
 	case "cat":
 		err := Cat(bot, chatID)
 		if err != nil {

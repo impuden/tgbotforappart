@@ -16,7 +16,7 @@ func Writedebt(db *sql.DB) {
 			continue
 		}
 
-		value /= 4 // Делим на 4
+		value /= 4
 
 		switch person {
 		case "Арсений":
@@ -62,7 +62,6 @@ func Deletedebt(db *sql.DB, name string, sname string) error {
 		"Максим":   "max",
 	}
 
-	// Проверка наличия соответствующего сокращения имени в мапе
 	shortenedName, ok := nameMapping[sname]
 	if !ok {
 		log.Printf("Неправильное сокращение имени: %s", sname)

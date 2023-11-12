@@ -13,12 +13,14 @@ import (
 )
 
 func main() {
+	// Инициируем логгирование
 	logFile, err := os.OpenFile("bot.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("Не удалось открыть файл логов: %v", err)
 	}
 	defer logFile.Close()
 
+	// Вызываем подключение к базе данных из файла
 	db, err := data.ConnectDB()
 	if err != nil {
 		log.Fatal(err)
@@ -28,6 +30,7 @@ func main() {
 
 	log.SetOutput(logFile)
 
+	// Инициируем самого бота
 	bot, err := tgbotapi.NewBotAPI(config.BotToken)
 	if err != nil {
 		log.Panic(err)
@@ -35,18 +38,15 @@ func main() {
 
 	bot.Debug = true
 
-	log.Printf("Auth on acc %s", bot.Self.UserName)
-
+	// Открываем канал для обновлений
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
-
 	updates, err := bot.GetUpdatesChan(u)
 
 	for update := range updates {
 		if update.Message == nil && update.CallbackQuery == nil {
 			continue
 		}
-
 		if update.Message != nil {
 			if update.Message.IsCommand() {
 				kbbutton.HandleCommand(bot, update.Message)

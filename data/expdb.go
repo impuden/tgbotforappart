@@ -6,7 +6,6 @@ import (
 )
 
 func Writeexp(db *sql.DB, name string, value float64, comment string) error {
-	// Получаем текущие значения для указанного имени
 	row := db.QueryRow("SELECT value, comment FROM expenses WHERE name = $1", name)
 
 	var (
@@ -20,7 +19,6 @@ func Writeexp(db *sql.DB, name string, value float64, comment string) error {
 		return err
 	}
 
-	// Проверяем текущие значения на NULL и заменяем их, если они NULL или пустые строки
 	if currentValue == nil {
 		currentValue = new(float64)
 	}
@@ -28,17 +26,13 @@ func Writeexp(db *sql.DB, name string, value float64, comment string) error {
 		currentComment = new(string)
 	}
 
-	// Проверяем текущий комментарий на пустую строку или наличие в нем только пробелов
 	if strings.TrimSpace(*currentComment) != "" {
-		// Добавляем запятую, если комментарий уже содержит данные
 		comment = ", " + comment
 	}
 
-	// Добавляем новые значения к существующим
 	*currentValue += value
 	*currentComment += comment
 
-	// Обновляем запись в базе данных
 	_, err = db.Exec(`
         INSERT INTO expenses (name, value, comment)
         VALUES ($1, $2, $3)

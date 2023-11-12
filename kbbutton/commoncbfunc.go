@@ -51,53 +51,52 @@ func AddCommon(db *sql.DB, bot *tgbotapi.BotAPI, chatID int64, updates <-chan tg
 
 	}
 
-	go func() {
-		for update := range updates {
-			if ctx.Step == 0 {
-				if update.Message != nil && update.Message.Chat.ID == chatID {
-					text := update.Message.Text
-					parts := strings.Fields(text)
-					if len(parts) < 2 {
-						response := "слишком коротко, повтори"
-						msg := tgbotapi.NewMessage(chatID, response)
-						bot.Send(msg)
-						continue
-					}
-
-					value, err := strconv.ParseFloat(parts[0], 64)
-					if err != nil {
-						response := "странное число, повтори"
-						msg := tgbotapi.NewMessage(chatID, response)
-						bot.Send(msg)
-						continue
-					}
-
-					ctx.Value = value
-					comment := strings.Join(parts[1:], " ")
-					ctx.Step = 1
-					log.Printf("Данные для БД: username=%s, value=%f, comment=%s", username, value, comment)
-
-					err = data.Writeexp(db, username, value, comment)
-					if err != nil {
-						errMsg := "Неладное вышло, не записались твои копеечки. Стукани кодеру, пусть посмотрит логи"
-						msg := tgbotapi.NewMessage(chatID, errMsg)
-						bot.Send(msg)
-						msg.ReplyMarkup = MainMenu()
-						log.Printf("Ошибка при записи в БД: %v", err)
-						return
-					}
-
-					log.Printf("Данные записаны в БД: username=%s, value=%f, comment=%s", username, value, comment)
-
-					msg := tgbotapi.NewMessage(chatID, "Твои потраченные кровные учтены, будь здоров.")
-					msg.ReplyMarkup = MainMenu()
+	for update := range updates {
+		if ctx.Step == 0 {
+			if update.Message != nil && update.Message.Chat.ID == chatID {
+				text := update.Message.Text
+				parts := strings.Fields(text)
+				if len(parts) < 2 {
+					response := "слишком коротко, повтори"
+					msg := tgbotapi.NewMessage(chatID, response)
 					bot.Send(msg)
-					data.Writedebt(db)
+					continue
+				}
+
+				value, err := strconv.ParseFloat(parts[0], 64)
+				if err != nil {
+					response := "странное число, повтори"
+					msg := tgbotapi.NewMessage(chatID, response)
+					bot.Send(msg)
+					log.Println("ошибка странного числа", value)
+					continue
+				}
+
+				ctx.Value = value
+				comment := strings.Join(parts[1:], " ")
+				ctx.Step = 1
+				log.Printf("Данные для БД: username=%s, value=%f, comment=%s", username, value, comment)
+
+				err = data.Writeexp(db, username, value, comment)
+				if err != nil {
+					errMsg := "Неладное вышло, не записались твои копеечки. Стукани кодеру, пусть посмотрит логи"
+					msg := tgbotapi.NewMessage(chatID, errMsg)
+					bot.Send(msg)
+					msg.ReplyMarkup = MainMenu()
+					log.Printf("Ошибка при записи в БД: %v", err)
 					return
 				}
+
+				log.Printf("Данные записаны в БД: username=%s, value=%f, comment=%s", username, value, comment)
+
+				msg := tgbotapi.NewMessage(chatID, "Твои потраченные кровные учтены, будь здоров.")
+				msg.ReplyMarkup = MainMenu()
+				bot.Send(msg)
+				data.Writedebt(db)
+				return
 			}
 		}
-	}()
+	}
 }
 
 func Printcommon(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery, db *sql.DB) {
@@ -119,8 +118,8 @@ func Printcommon(bot *tgbotapi.BotAPI, callback *tgbotapi.CallbackQuery, db *sql
 	}
 }
 
-func Resetexp(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB, userID int, updates <-chan tgbotapi.Update) {
-	username, exist := usermap.TelegramID[userID]
+func Resetexp(bot *tgbotapi.BotAPI, chatID int64, userID int) {
+	_, exist := usermap.TelegramID[userID]
 
 	if !exist {
 		msg := tgbotapi.NewMessage(chatID, "Ваше имя не найдено в базе для этой квартиры.")
@@ -128,40 +127,42 @@ func Resetexp(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB, userID int, update
 		return
 	}
 
-	msg := tgbotapi.NewMessage(chatID, "Ты уверен что хочешь удалить данные о ВСЕХ своих затратах? Напишите 'Да' для подтверждения.\nУчти что мой создатель еще учится и для выхода с этого шага надо что-то написать боту :)")
+	msg := tgbotapi.NewMessage(chatID, "Ты уверен что хочешь удалить данные о ВСЕХ своих затратах, без возможности восстановить данные?")
+	msg.ReplyMarkup = DelExpKB()
 	_, err := bot.Send(msg)
 	if err != nil {
 		log.Println("Ошибка при отправке сообщения:", err)
 		return
 	}
+}
 
-	go func() {
-		for update := range updates {
-			if update.Message != nil && update.Message.Chat.ID == chatID {
-				if update.Message.Text == "Да" || update.Message.Text == "да" {
-					// Выполнение удаления данных из БД
-					data.Delexp(db, username)
-					data.Writedebt(db)
-					log.Println("Данные удалены пользователем", username)
-					// Уведомление об удалении
-					msg := tgbotapi.NewMessage(chatID, "Данные удалены.")
-					msg.ReplyMarkup = MainMenu()
-					_, err := bot.Send(msg)
-					if err != nil {
-						log.Println("Ошибка при отправке сообщения:", err)
-					}
-					break
-				} else {
-					// В случае, если ответ не 'Да'
-					msg := tgbotapi.NewMessage(chatID, "Я тебя не понял, повторить можно только через главное меню.")
-					msg.ReplyMarkup = MainMenu()
-					_, err := bot.Send(msg)
-					if err != nil {
-						log.Println("Ошибка при отправке сообщения:", err)
-					}
-					break
-				}
-			}
-		}
-	}()
+func DeleteExp(bot *tgbotapi.BotAPI, chatID int64, db *sql.DB, userID int) {
+	username, exist := usermap.TelegramID[userID]
+	if !exist {
+		msg := tgbotapi.NewMessage(chatID, "Вас нет в этой квартире.")
+		bot.Send(msg)
+		return
+	}
+
+	// Выполнение удаления данных из БД
+	data.Delexp(db, username)
+	data.Writedebt(db)
+	log.Println("Данные удалены пользователем", username)
+	// Уведомление об удалении
+	msg := tgbotapi.NewMessage(chatID, "Данные удалены.")
+	msg.ReplyMarkup = MainMenu()
+	_, err := bot.Send(msg)
+	if err != nil {
+		log.Println("Ошибка при отправке сообщения:", err)
+	}
+}
+
+func DeclineDelExp(bot *tgbotapi.BotAPI, chatID int64) {
+	msg := tgbotapi.NewMessage(chatID, "Ясно, данные не удалены, возвращаю в главное меню.")
+	msg.ReplyMarkup = CreateInlineKeyboard()
+	_, err := bot.Send(msg)
+	if err != nil {
+		log.Println("Ошибка при отправке сообщения:", err)
+	}
+
 }

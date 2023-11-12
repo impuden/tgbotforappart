@@ -102,3 +102,31 @@ func DeleteDebtKB() tgbotapi.InlineKeyboardMarkup {
 
 	return keyboard
 }
+
+func Accept() tgbotapi.InlineKeyboardMarkup {
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Подтвердить", "accept")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Не подтверждать", "decline")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("В главное меню", "back")),
+	)
+
+	return keyboard
+}
+
+func DelExpKB() tgbotapi.InlineKeyboardMarkup {
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Уверен, удаляем.", "accdelexp")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Не, я передумал, оставляем", "decldelexp")),
+	)
+
+	return keyboard
+}
+
+func AproveDelZHKH() tgbotapi.InlineKeyboardMarkup {
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Да, удаляем запись о ЖКХ.", "accdelzhkh")),
+		tgbotapi.NewInlineKeyboardRow(tgbotapi.NewInlineKeyboardButtonData("Передумал, вернуться в Главное меню", "decldelexp")),
+	)
+
+	return keyboard
+}
